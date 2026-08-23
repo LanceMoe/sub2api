@@ -90,7 +90,7 @@ func TransformClaudeToGeminiWithOptions(claudeReq *ClaudeRequest, projectID, map
 
 	// 检测是否有 web_search 工具
 	hasWebSearchTool := hasWebSearchTool(claudeReq.Tools)
-	requestType := "agent"
+	requestType := "checkpoint"
 	targetModel := mappedModel
 	if hasWebSearchTool {
 		requestType = "web_search"
@@ -183,7 +183,7 @@ func TransformClaudeToGeminiWithOptions(claudeReq *ClaudeRequest, projectID, map
 	// 6. 包装为 v1internal 请求
 	v1Req := V1InternalRequest{
 		Project:     projectID,
-		RequestID:   "agent-" + uuid.New().String(),
+		RequestID:   "checkpoint/" + uuid.New().String(),
 		UserAgent:   "antigravity", // 固定值，与官方客户端一致
 		RequestType: requestType,
 		Model:       targetModel,
@@ -338,6 +338,8 @@ func buildSystemInstruction(system json.RawMessage, modelName string, opts Trans
 		}
 	}
 
+	// Disable Antigravity identity
+	userHasAntigravityIdentity = true
 	// 仅在用户未提供 Antigravity identity 时注入
 	if opts.EnableIdentityPatch && !userHasAntigravityIdentity {
 		identityPatch := strings.TrimSpace(opts.IdentityPatch)
@@ -667,6 +669,22 @@ func buildGenerationConfig(req *ClaudeRequest) *GeminiGenerationConfig {
 		config.ThinkingConfig.ThinkingBudget = budget
 	}
 
+	if flashBudget, ok := GetFlashSuffixThinkingBudget(req.Model); ok {
+		if config.ThinkingConfig == nil {
+			config.ThinkingConfig = &GeminiThinkingConfig{
+				IncludeThoughts: true,
+			}
+		}
+		config.ThinkingConfig.ThinkingBudget = flashBudget
+		if flashBudget > 0 {
+			if adjusted, ok := ensureMaxTokensGreaterThanBudget(config.MaxOutputTokens, flashBudget); ok {
+				log.Printf("[Antigravity] Auto-adjusted max_tokens from %d to %d (must be > budget_tokens=%d)",
+					config.MaxOutputTokens, adjusted, flashBudget)
+				config.MaxOutputTokens = adjusted
+			}
+		}
+	}
+
 	if config.MaxOutputTokens > maxLimit {
 		config.MaxOutputTokens = maxLimit
 	}
@@ -805,4 +823,22 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 	}
 
 	return declarations
+}
+
+// GetFlashSuffixThinkingBudget 返回以 flash 后缀结尾的模型对应的 thinkingBudget。
+// -flash-low -> 1000
+// -flash-mediim / -flash-medium -> 4000
+// -flash-high -> -1
+func GetFlashSuffixThinkingBudget(model string) (int, bool) {
+	lower := strings.ToLower(model)
+	if strings.HasSuffix(lower, "-flash-low") {
+		return 1000, true
+	}
+	if strings.HasSuffix(lower, "-flash-mediim") || strings.HasSuffix(lower, "-flash-medium") {
+		return 4000, true
+	}
+	if strings.HasSuffix(lower, "-flash-high") {
+		return -1, true
+	}
+	return 0, false
 }

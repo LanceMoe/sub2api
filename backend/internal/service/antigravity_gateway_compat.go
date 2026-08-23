@@ -236,7 +236,7 @@ func (s *AntigravityGatewayService) prepareAntigravityCompatCall(
 		_ = s.writeAntigravityCompatError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	geminiBody, err := s.buildAntigravityCompatGeminiBody(ctx, request.claudeBody, &claudeRequest, projectID, mappedModel)
+	geminiBody, err := s.buildAntigravityCompatGeminiBody(ctx, request.claudeBody, &claudeRequest, projectID, mappedModel, request.originalBody)
 	if err != nil {
 		return nil, s.writeAntigravityCompatError(c, http.StatusBadRequest, "invalid_request_error", "Invalid request")
 	}
@@ -258,6 +258,7 @@ func (s *AntigravityGatewayService) buildAntigravityCompatGeminiBody(
 	claudeRequest *antigravity.ClaudeRequest,
 	projectID string,
 	mappedModel string,
+	originalBody ...[]byte,
 ) ([]byte, error) {
 	if strings.HasPrefix(strings.ToLower(mappedModel), "gemini-") {
 		body, err := convertClaudeMessagesToGeminiGenerateContent(claudeBody)
@@ -275,6 +276,16 @@ func (s *AntigravityGatewayService) buildAntigravityCompatGeminiBody(
 		}
 		if cleaned, cleanErr := cleanGeminiRequest(body); cleanErr == nil {
 			body = cleaned
+		}
+		if len(originalBody) > 0 && hasIncludeThoughts(originalBody[0]) {
+			body, err = injectGeminiIncludeThoughts(body)
+			if err != nil {
+				return nil, err
+			}
+		}
+		body, err = injectFlashSuffixThinkingBudget(body, mappedModel)
+		if err != nil {
+			return nil, err
 		}
 		return s.wrapV1InternalRequest(projectID, mappedModel, body)
 	}
@@ -313,6 +324,56 @@ func enableMixedGeminiToolInvocations(body []byte) ([]byte, error) {
 		request["toolConfig"] = toolConfig
 	}
 	toolConfig["includeServerSideToolInvocations"] = true
+	return json.Marshal(request)
+}
+
+// hasIncludeThoughts returns true when the original OpenAI-style request body
+// contains "include_thoughts": true.
+func hasIncludeThoughts(body []byte) bool {
+	var raw struct {
+		IncludeThoughts bool `json:"include_thoughts"`
+	}
+	_ = json.Unmarshal(body, &raw)
+	return raw.IncludeThoughts
+}
+
+// injectGeminiIncludeThoughts sets generationConfig.thinkingConfig.includeThoughts = true
+// in a Gemini generateContent request body.
+func injectGeminiIncludeThoughts(body []byte) ([]byte, error) {
+	var request map[string]any
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, err
+	}
+	genConfig, _ := request["generationConfig"].(map[string]any)
+	if genConfig == nil {
+		genConfig = make(map[string]any)
+		request["generationConfig"] = genConfig
+	}
+	genConfig["thinkingConfig"] = map[string]any{"includeThoughts": true}
+	return json.Marshal(request)
+}
+
+func injectFlashSuffixThinkingBudget(body []byte, model string) ([]byte, error) {
+	budget, ok := antigravity.GetFlashSuffixThinkingBudget(model)
+	if !ok {
+		return body, nil
+	}
+	var request map[string]any
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, err
+	}
+	genConfig, _ := request["generationConfig"].(map[string]any)
+	if genConfig == nil {
+		genConfig = make(map[string]any)
+		request["generationConfig"] = genConfig
+	}
+	thinkingConfig, _ := genConfig["thinkingConfig"].(map[string]any)
+	if thinkingConfig == nil {
+		thinkingConfig = make(map[string]any)
+		genConfig["thinkingConfig"] = thinkingConfig
+	}
+	thinkingConfig["includeThoughts"] = true
+	thinkingConfig["thinkingBudget"] = budget
 	return json.Marshal(request)
 }
 

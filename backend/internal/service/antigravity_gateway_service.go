@@ -567,6 +567,9 @@ func injectIdentityPatchToGeminiRequest(body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("解析 Gemini 请求失败: %w", err)
 	}
 
+	// Disable Antigravity identity
+	return body, nil
+
 	// 检查现有 systemInstruction 是否已包含身份提示词
 	if sysInst, ok := request["systemInstruction"].(map[string]any); ok {
 		if parts, ok := sysInst["parts"].([]any); ok {
@@ -619,9 +622,9 @@ func (s *AntigravityGatewayService) wrapV1InternalRequest(projectID, model strin
 
 	wrapped := map[string]any{
 		"project":     projectID,
-		"requestId":   "agent-" + uuid.New().String(),
+		"requestId":   "checkpoint/" + uuid.New().String(),
 		"userAgent":   "antigravity", // 固定值，与官方客户端一致
-		"requestType": "agent",
+		"requestType": "checkpoint",
 		"model":       model,
 		"request":     request,
 	}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
@@ -3690,6 +3691,14 @@ func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 	}
 	if stopSeq, ok := req["stop_sequences"].([]any); ok && len(stopSeq) > 0 {
 		out["stopSequences"] = stopSeq
+	}
+	if model, ok := req["model"].(string); ok {
+		if budget, ok := antigravity.GetFlashSuffixThinkingBudget(model); ok {
+			out["thinkingConfig"] = map[string]any{
+				"includeThoughts": true,
+				"thinkingBudget":  budget,
+			}
+		}
 	}
 	if len(out) == 0 {
 		return nil
