@@ -33,8 +33,10 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 		out.MaxTokens = *req.MaxOutputTokens
 	}
 	if out.MaxTokens == 0 {
-		// Anthropic requires max_tokens; default to a sensible value.
-		out.MaxTokens = 8192
+		// Anthropic requires max_tokens. Default matches the antigravity gateway's
+		// defaultMaxOutputTokens so "no limit given" behaves consistently across
+		// the Claude-native and Responses-compatible entry points.
+		out.MaxTokens = 64000
 	}
 
 	// Convert tools
