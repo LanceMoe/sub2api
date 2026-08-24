@@ -300,18 +300,17 @@ func filterOpenCodePrompt(text string) string {
 func buildSystemInstruction(system json.RawMessage, modelName string, opts TransformOptions, tools []ClaudeTool) *GeminiContent {
 	var parts []GeminiPart
 
-	// 先解析用户的 system prompt，检测是否已包含 Antigravity identity
-	userHasAntigravityIdentity := false
+	// 先解析用户的 system prompt
 	var userSystemParts []GeminiPart
+
+	// Disable Antigravity identity：视为用户已提供身份，跳过身份注入
+	userHasAntigravityIdentity := true
 
 	if len(system) > 0 {
 		// 尝试解析为字符串
 		var sysStr string
 		if err := json.Unmarshal(system, &sysStr); err == nil {
 			if strings.TrimSpace(sysStr) != "" {
-				if strings.Contains(sysStr, "You are Antigravity") {
-					userHasAntigravityIdentity = true
-				}
 				// 过滤 OpenCode 默认提示词
 				filtered := filterOpenCodePrompt(sysStr)
 				if filtered != "" {
@@ -324,9 +323,6 @@ func buildSystemInstruction(system json.RawMessage, modelName string, opts Trans
 			if err := json.Unmarshal(system, &sysBlocks); err == nil {
 				for _, block := range sysBlocks {
 					if block.Type == "text" && strings.TrimSpace(block.Text) != "" {
-						if strings.Contains(block.Text, "You are Antigravity") {
-							userHasAntigravityIdentity = true
-						}
 						// 过滤 OpenCode 默认提示词
 						filtered := filterOpenCodePrompt(block.Text)
 						if filtered != "" {
@@ -338,8 +334,6 @@ func buildSystemInstruction(system json.RawMessage, modelName string, opts Trans
 		}
 	}
 
-	// Disable Antigravity identity
-	userHasAntigravityIdentity = true
 	// 仅在用户未提供 Antigravity identity 时注入
 	if opts.EnableIdentityPatch && !userHasAntigravityIdentity {
 		identityPatch := strings.TrimSpace(opts.IdentityPatch)
