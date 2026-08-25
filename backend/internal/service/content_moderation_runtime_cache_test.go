@@ -273,6 +273,7 @@ func TestContentModerationRuntimeSnapshotRefreshFailureKeepsStaleConfig(t *testi
 	require.True(t, decision.Blocked)
 
 	repo.failMultiple(errors.New("database unavailable"))
+	svc.runtimeRefreshRetryAt.Store(0)
 	decision, err = svc.Check(context.Background(), input)
 	require.NoError(t, err)
 	require.True(t, decision.Blocked)
